@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Phantom Quick Send</title>
+<style>
+  body{font-family:Inter,system-ui,Arial,sans-serif;max-width:720px;margin:40px auto;padding:16px;color:#111}
+  h1{margin:0 0 8px;font-size:20px}
+  p{margin:6px 0 12px;color:#333}
+  label{display:block;margin:8px 0}
+  input[type="number"]{width:160px;padding:8px;border-radius:8px;border:1px solid #ddd}
+  button{background:#0ee6a8;color:#042; border:none;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:600}
+  pre{background:#f6f7f9;padding:12px;border-radius:8px;margin-top:12px;white-space:pre-wrap}
+  footer{margin-top:14px;font-size:13px;color:#666}
+  .muted{color:#666;font-size:13px}
+</style>
+<!-- buffer + solana web3 via CDN (ok when hosted from your own Pages/Netlify) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/buffer/6.0.3/buffer.min.js"></script>
+<script>window.global = window; window.Buffer = window.buffer?.Buffer || window.Buffer; window.process = window.process || { env: {} };</script>
+<script src="https://unpkg.com/@solana/web3.js@1.79.0/lib/index.iife.min.js"></script>
+</head>
+<body>
+  <h1>Phantom Quick Send</h1>
+  <p>Denne side åbner din Phantom-extension og beder dig <strong>godkende</strong> en overførsel til den viste wallet. Intet sendes uden at du trykker <em>Approve</em> i Phantom.</p>
+
+  <div><strong>Modtager (kontroller altid):</strong></div>
+  <pre id="recipient">6sxgW7YRkQtEJgZeNiT8JSyJK1iCupMXG9c593wpwtS1</pre>
+
+  <label>Beløb i SOL:
+    <input id="amount" type="number" min="0.000001" step="0.000001" value="0.01"/>
+  </label>
+
+  <div style="margin-top:10px">
+    <button id="sendBtn">Connect &amp; Send</button>
+  </div>
+
+  <pre id="log" style="display:none"></pre>
+
+  <footer>
+    <div class="muted">Tip: test først på <strong>devnet</strong>. Skift til mainnet-beta før rigtige betalinger.</div>
+  </footer>
+
+<script>
+(async function(){
+  const RECIPIENT_ADDRESS = "RECIPIENT_ADDRESS"; // <-- SKIFT HER
+  const CLUSTER = "devnet"; // "mainnet-beta" når klar
+  const sendBtn = document.getElementById('sendBtn');
+  const logEl = document.getElementById('log');
+  document.getElementById('recipient').textContent = RECIPIENT_ADDRESS;
+
+  const log = (t, visible=false) => { logEl.style.display = visible ? 'block' : 'none'; logEl.textContent = t + "\n" + logEl.textContent; };
+
+  sendBtn.addEventListener('click', async ()=>{
+    try{
+      if (!window.solana || !window.solana.isPhantom) { alert("Phantom ikke fundet i denne browser-profil. Sørg for Phantom er installeret i denne profil."); return; }
+      const provider = window.solana;
+      log("Beder Phantom om at connect...", true);
+      await provider.connect(); // connect (Phantom vil poppe op)
+      log("Forbundet som: " + provider.publicKey.toString(), true);
+
+      const amount = parseFloat(document.getElementById('amount').value);
+      if (isNaN(amount) || amount <= 0) { alert("Indtast et positivt beløb."); return; }
+
+      const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(CLUSTER),'confirmed');
+      const recipient = new solanaWeb3.PublicKey(RECIPIENT_ADDRESS);
+      const lamports = Math.round(amount * solanaWeb3.LAMPORTS_PER_SOL);
+
+      const tx = new solanaWeb3.Transaction().add(
+        solanaWeb3.SystemProgram.transfer({
+          fromPubkey: provider.publicKey,
+          toPubkey: recipient,
+          lamports
+        })
+      );
+      tx.feePayer = provider.publicKey;
+      tx.recentBlockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
+
+      log("Phantom vil nu bede dig signere — tjek modtager & beløb i Phantom UI", true);
+      const signed = await provider.signTransaction(tx); // Phantom sign-popup
+      log("Signeret — sender transaktion...", true);
+      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
+      await connection.confirmTransaction(sig, 'confirmed');
+      alert("✅ Transaktion sendt! Signature: " + sig);
+      log("Sent: " + sig, true);
+    } catch (err) {
+      console.error(err);
+      alert("Fejl: " + (err && err.message ? err.message : String(err)));
+      log("Fejl: " + (err && err.message ? err.message : String(err)), true);
+    }
+  });
+})();
+</script>
+</body>
+</html>
